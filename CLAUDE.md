@@ -25,7 +25,7 @@ LunarSlicer is Snapmaker's fork of Ultimaker CuraEngine: a headless C++ FDM slic
   `git grep <pat> origin/main -- src include`; do not check it out over `a250t/main`.
 
 ## Tech stack (a250t/main)
-C++11 (`CMakeLists.txt:47`), CMake >= 3.6, vendored `libs/clipper` + `libs/rapidjson`, Stb (git-cloned at configure
+C++11 (`CMakeLists.txt:48`), CMake >= 3.6, vendored `libs/clipper` + `libs/rapidjson`, Stb (git-cloned at configure
 time by `cmake/FindStb.cmake`), OpenMP optional (`cmake/FindOpenMP.cmake`, Snapmaker-added), Arcus/protobuf optional
 (`ENABLE_ARCUS` OFF by default -> no `connect` command), GoogleTest 1.8.0 (`BUILD_TESTS`, git-cloned by
 `cmake/FindGMock.cmake`). `CURA_ENGINE_VERSION` defaults to `master` (banner `Luban_Engine version master`).
@@ -80,7 +80,8 @@ cmake --build $B-tests --target build_all_tests -- -j 10 && (cd $B-tests && ctes
   `Progress:<stage>:<i>:<n> \t<pct>%`). On 5.3 spdlog logs to stdout (`git show origin/main:src/Application.cpp` `:33`), and
   Luban parses stdout for `Processing insets for layer`, `GcodeWriter processing layer`, `Print time (s):`,
   `;TIME:`, `;Filament used:` (`Slicer.ts:173-243`, time x1.07). A 4.8 binary dropped into Luban gives no progress.
-- Exit codes: 0 ok, 1 bad CLI/model/output, 2 missing setting/JSON error, 139 crash.
+- Exit codes: 0 ok, 1 bad CLI/model/output or JSON load failure (`CommandLine.cpp:176`), 2 missing setting
+  (`src/settings/Settings.cpp:68`), 139 crash.
 
 ## Snapmaker additions on a250t/main (git diff 83c65a1a HEAD: 22 files, +1320/-123)
 - `support` command: `Application.cpp:234` calls `slice()`; `Slice::compute` branches on `cmd` (`Slice.cpp:24-43`).
