@@ -1,0 +1,81 @@
+# A250T CI: build the LunarSlicer engine (CuraEngine 4.8 lineage, branch a250t/main) on Linux and macOS
+# and run its GoogleTest suite. No signing, no release upload (the release workflow needs Snapmaker's secrets).
+name: A250T build and test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [a250t/main]
+
+env:
+  # CMake 4.x rejects the cmake_minimum_required() of googletest 1.8.0 (gmock ExternalProject) without this.
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
+defaults:
+  run:
+    shell: bash   # bash -eo pipefail, so "cmake ... | tee" still fails the step
+
+jobs:
+  build-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64 (GCC)
+            os: ubuntu-latest
+            artifact: LunarSlicer-linux-x64
+          - name: macOS arm64 (Apple clang + libomp)
+            os: macos-latest
+            artifact: LunarSlicer-mac-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          cmake --version
+          c++ --version
+
+      - name: Install libomp (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install libomp
+          OMP=$(brew --prefix libomp)
+          # cmake/FindOpenMP.cmake only searches implicit link dirs, so pass the keg-only libomp explicitly.
+          echo "EXTRA_CMAKE_ARGS=-DCMAKE_OSX_ARCHITECTURES=arm64 -DOpenMP_libomp_LIBRARY=$OMP/lib/libomp.a -DOpenMP_C_INCLUDE_DIR=$OMP/include -DOpenMP_CXX_INCLUDE_DIR=$OMP/include" >> "$GITHUB_ENV"
+
+      - name: Configure engine
+        run: cmake -DCMAKE_BUILD_TYPE=Release $EXTRA_CMAKE_ARGS -S . -B build 2>&1 | tee configure.log
+
+      - name: Require OpenMP
+        run: |
+          if grep -q "Could NOT find OpenMP" configure.log; then
+            echo "::error::OpenMP not found; the engine would build single-threaded"; exit 1
+          fi
+
+      - name: Build engine
+        run: cmake --build build --target LunarSlicer -j 4
+
+      - name: Smoke test engine
+        run: |
+          ./build/LunarSlicer version
+          ./build/LunarSlicer ptest
+          if [ "$RUNNER_OS" = "macOS" ]; then otool -L ./build/LunarSlicer; lipo -archs ./build/LunarSlicer; else ldd ./build/LunarSlicer; fi
+
+      - name: Configure tests
+        run: cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON $EXTRA_CMAKE_ARGS -S . -B build-tests
+
+      - name: Build tests
+        run: cmake --build build-tests --target build_all_tests -j 4
+
+      - name: Run tests
+        working-directory: build-tests
+        run: ctest --output-on-failure
+
+      - name: Upload engine binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/LunarSlicer
+          if-no-files-found: error
